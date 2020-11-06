@@ -6,7 +6,7 @@ private let PAM_SUCCESS = CInt(0)
 private let PAM_AUTH_ERR = CInt(9)
 private let PAM_IGNORE = CInt(25)
 private let PAM_SILENT = CInt(bitPattern: 0x80000000)
-private let DEFAULT_REASON = "perform an action that requires authentication"
+private let DEFAULT_REASON = "execute a command"
 
 public typealias vchar = UnsafePointer<UnsafeMutablePointer<CChar>>
 public typealias pam_handle_t = UnsafeRawPointer?
@@ -21,11 +21,11 @@ public func pam_sm_authenticate(pamh: pam_handle_t, flags: CInt, argc: CInt, arg
     }
 
     let arguments = parseArguments(argc: Int(argc), argv: argv)
-    var reason = arguments["reason"] ?? DEFAULT_REASON
-    reason = reason.isEmpty ? DEFAULT_REASON : reason
+    var reason = arguments["reason"] ?? DEFAULT_REASON + ":\n\"\(sudoArguments.joined(separator: " "))\""
+    reason = reason.isEmpty ? DEFAULT_REASON + ":\n\"\(sudoArguments.joined(separator: " "))\"" : reason
 
-    let policy = LAPolicy.deviceOwnerAuthenticationIgnoringUserID
-    
+    let policy = LAPolicy.deviceOwnerAuthenticationIgnoringUserID(policy: arguments["policy"]!)
+
     let context = LAContext()
     if !context.canEvaluatePolicy(policy, error: nil) {
         return PAM_IGNORE
@@ -79,8 +79,15 @@ private func parseArguments(argc: Int, argv: vchar) -> [String: String] {
 }
 
 private extension LAPolicy {
-    static var deviceOwnerAuthenticationIgnoringUserID: LAPolicy {
-        return .deviceOwnerAuthenticationWithBiometricsOrWatch
+    static func deviceOwnerAuthenticationIgnoringUserID(policy: String) -> LAPolicy {
+        switch policy {
+        case "touch":
+            return LAPolicy(rawValue: 0x3f0) ?? .deviceOwnerAuthenticationWithBiometrics
+        case "watch":
+            return .deviceOwnerAuthenticationWithWatch
+        default:
+            return .deviceOwnerAuthenticationWithBiometricsOrWatch
+        }
     }
 }
 
